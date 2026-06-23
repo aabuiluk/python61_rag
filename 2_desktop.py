@@ -22,12 +22,13 @@ class ChatApp:
 
         self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-        tk.Label(root, text="Діалог:", anchor="w").pack(fill=tk.X, padx=10, pady=(10, 0))
-
-        self.chat_area = scrolledtext.ScrolledText(
-            root, wrap=tk.WORD, state=tk.DISABLED, height=20
+        tk.Label(root, text="Діалог (можна виділяти і копіювати):", anchor="w").pack(
+            fill=tk.X, padx=10, pady=(10, 0)
         )
+
+        self.chat_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, height=20)
         self.chat_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.chat_area.bind("<KeyPress>", self._chat_readonly_key)
 
         input_frame = tk.Frame(root)
         input_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -52,6 +53,22 @@ class ChatApp:
 
         self.append_text("Система", "Вітаю! Введіть питання у поле внизу.\n")
         self.root.after(100, self._focus_input)
+
+    def _chat_readonly_key(self, event: tk.Event) -> str | None:
+        key = event.keysym
+        if key in {
+            "Left", "Right", "Up", "Down", "Home", "End",
+            "Prior", "Next", "Shift_L", "Shift_R",
+            "Control_L", "Control_R", "Meta_L", "Meta_R", "Alt_L", "Alt_R",
+        }:
+            return None
+        if key.lower() in {"c", "a", "insert"}:
+            return None
+        if event.char and event.char.isprintable():
+            return "break"
+        if key in {"BackSpace", "Delete", "Return", "space", "Tab"}:
+            return "break"
+        return None
 
     def _focus_input(self) -> None:
         self.input_field.focus_set()
@@ -79,9 +96,7 @@ class ChatApp:
             self._focus_input()
 
     def append_text(self, author: str, text: str) -> None:
-        self.chat_area.config(state=tk.NORMAL)
         self.chat_area.insert(tk.END, f"{author}: {text}\n")
-        self.chat_area.config(state=tk.DISABLED)
         self.chat_area.see(tk.END)
 
     def send_message(self) -> None:

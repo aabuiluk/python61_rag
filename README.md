@@ -27,7 +27,8 @@ python generate_catalogs.py
 | `0_test_settings.py` | Показує всі параметри запиту до API з поясненнями |
 | `1_console.py` | Консольний чат |
 | `2_desktop.py` | Десктопний чат (tkinter) |
-| `3_rag.py` | Чат з RAG — оберіть каталог ДАСк, Goodwine або свій файл |
+| `3_rag.py` | Чат з RAG — завантажте свій `.pdf` або `.txt` |
+| `rag_core.py` | Ядро RAG (гібридний пошук, логіка з csc_rag) |
 | `generate_catalogs.py` | Оновлення PDF-каталогів з сайтів |
 
 ## Запуск
