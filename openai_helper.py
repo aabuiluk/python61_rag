@@ -83,8 +83,11 @@ def chat_completion(messages: list[dict]) -> str:
     return data["choices"][0]["message"]["content"]
 
 
-def get_embedding(text: str) -> list[float]:
-    """Отримує вектор ембедінгу для тексту (для RAG)."""
+def get_embeddings(texts: list[str]) -> list[list[float]]:
+    """Отримує ембедінги для списку текстів одним запитом (швидша індексація RAG)."""
+    if not texts:
+        return []
+
     api_key = get_api_key()
     model = os.environ.get("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
@@ -94,11 +97,17 @@ def get_embedding(text: str) -> list[float]:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={"model": model, "input": text},
+        json={"model": model, "input": texts},
         timeout=120,
     )
     response.raise_for_status()
-    return response.json()["data"][0]["embedding"]
+    items = sorted(response.json()["data"], key=lambda x: x["index"])
+    return [item["embedding"] for item in items]
+
+
+def get_embedding(text: str) -> list[float]:
+    """Отримує вектор ембедінгу для одного тексту (пошук у RAG)."""
+    return get_embeddings([text])[0]
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -110,8 +119,10 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def split_text_into_chunks(text: str, chunk_size: int = 500) -> list[str]:
+def split_text_into_chunks(text: str, chunk_size: int | None = None) -> list[str]:
     """Розбиває текст на фрагменти за абзацами або за довжиною."""
+    if chunk_size is None:
+        chunk_size = int(os.environ.get("RAG_CHUNK_SIZE", "2000"))
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     chunks: list[str] = []
     current = ""
@@ -133,35 +144,68 @@ def split_text_into_chunks(text: str, chunk_size: int = 500) -> list[str]:
     return chunks
 
 
-def load_rag_documents(data_dir: str) -> list[dict]:
-    """Читає .txt файли з папки і повертає список фрагментів з метаданими."""
-    path = Path(data_dir)
+def read_file_text(file_path: Path) -> str:
+    """Читає текст з .txt або .pdf файлу."""
+    suffix = file_path.suffix.lower()
+    if suffix == ".pdf":
+        from pypdf import PdfReader
+
+        reader = PdfReader(str(file_path))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        return "\n".join(pages)
+    return file_path.read_text(encoding="utf-8")
+
+
+def load_rag_documents(source: str | Path) -> list[dict]:
+    """Читає один файл або всі .txt/.pdf з папки."""
+    path = Path(source)
     if not path.exists():
         return []
 
     documents: list[dict] = []
-    for file_path in sorted(path.glob("*.txt")):
-        text = file_path.read_text(encoding="utf-8")
+    files: list[Path]
+
+    if path.is_file():
+        files = [path]
+    else:
+        files = sorted(list(path.glob("*.txt")) + list(path.glob("*.pdf")))
+
+    for file_path in files:
+        text = read_file_text(file_path)
+        if not text.strip():
+            continue
         for i, chunk in enumerate(split_text_into_chunks(text)):
             documents.append({"source": file_path.name, "chunk_id": i, "text": chunk})
     return documents
 
 
+# Готові каталоги в проєкті
+CATALOG_DASK = Path("data/catalogs/dask_catalog.pdf")
+CATALOG_GOODWINE = Path("data/catalogs/goodwine_catalog.pdf")
+
+
 class SimpleRAG:
     """Простий RAG: ембедінги + косинусна схожість (без векторних БД)."""
 
-    def __init__(self, data_dir: str | None = None):
+    def __init__(self, source: str | Path | None = None):
         load_env()
-        self.data_dir = data_dir or os.environ.get("RAG_DATA_DIR", "data")
         self.top_k = int(os.environ.get("RAG_TOP_K", "3"))
-        self.documents = load_rag_documents(self.data_dir)
+        self.source = str(source) if source else ""
+        self.documents: list[dict] = []
         self.embeddings: list[list[float]] = []
+        if source:
+            self.set_source(source)
+
+    def set_source(self, source: str | Path) -> None:
+        """Завантажує документи з файлу або папки (без індексації)."""
+        self.source = str(source)
+        self.documents = load_rag_documents(source)
+        self.embeddings = []
 
     def index(self) -> int:
-        """Будує ембедінги для всіх фрагментів. Повертає кількість фрагментів."""
-        self.embeddings = []
-        for doc in self.documents:
-            self.embeddings.append(get_embedding(doc["text"]))
+        """Будує ембедінги для всіх фрагментів одним пакетом. Повертає кількість фрагментів."""
+        texts = [doc["text"] for doc in self.documents]
+        self.embeddings = get_embeddings(texts)
         return len(self.documents)
 
     def search(self, question: str) -> list[dict]:
