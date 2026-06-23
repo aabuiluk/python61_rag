@@ -8,25 +8,37 @@ import threading
 import tkinter as tk
 from tkinter import scrolledtext, messagebox
 
+from chat_presets import ROLE_PRESETS
 from openai_helper import chat_completion, load_env
-
-SYSTEM_PROMPT = "Ти корисний помічник. Відповідай українською, коротко і зрозуміло."
 
 
 class ChatApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Чат з ChatGPT")
-        self.root.geometry("600x520")
+        self.root.geometry("600x580")
         self._sending = False
+        self._role_var = tk.StringVar(value=ROLE_PRESETS[0]["id"])
+        self.messages: list[dict] = []
+        self._apply_role(ROLE_PRESETS[0]["prompt"])
 
-        self.messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        role_frame = tk.LabelFrame(root, text="Роль помічника", padx=10, pady=8)
+        role_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+        for preset in ROLE_PRESETS:
+            tk.Radiobutton(
+                role_frame,
+                text=preset["name"],
+                variable=self._role_var,
+                value=preset["id"],
+                command=self.on_role_change,
+            ).pack(anchor="w")
 
         tk.Label(root, text="Діалог (можна виділяти і копіювати):", anchor="w").pack(
             fill=tk.X, padx=10, pady=(10, 0)
         )
 
-        self.chat_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, height=20)
+        self.chat_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, height=18)
         self.chat_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.chat_area.bind("<KeyPress>", self._chat_readonly_key)
 
@@ -51,8 +63,27 @@ class ChatApp:
         self.status_label = tk.Label(input_frame, text="", fg="gray", anchor="w")
         self.status_label.pack(fill=tk.X, pady=(3, 0))
 
-        self.append_text("Система", "Вітаю! Введіть питання у поле внизу.\n")
+        role_name = ROLE_PRESETS[0]["name"]
+        self.append_text("Система", f"Вітаю! Роль: {role_name}. Задайте питання.\n")
         self.root.after(100, self._focus_input)
+
+    def _current_role(self) -> dict:
+        role_id = self._role_var.get()
+        for preset in ROLE_PRESETS:
+            if preset["id"] == role_id:
+                return preset
+        return ROLE_PRESETS[0]
+
+    def _apply_role(self, prompt: str) -> None:
+        if self.messages and self.messages[0]["role"] == "system":
+            self.messages[0]["content"] = prompt
+        else:
+            self.messages.insert(0, {"role": "system", "content": prompt})
+
+    def on_role_change(self) -> None:
+        role = self._current_role()
+        self._apply_role(role["prompt"])
+        self.append_text("Система", f"Роль змінено на: {role['name']}\n")
 
     def _chat_readonly_key(self, event: tk.Event) -> str | None:
         key = event.keysym
@@ -122,8 +153,9 @@ class ChatApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_success(self, answer: str) -> None:
+        role_name = self._current_role()["name"]
         self.messages.append({"role": "assistant", "content": answer})
-        self.append_text("ChatGPT", answer)
+        self.append_text(f"ChatGPT ({role_name})", answer)
         self._set_busy(False)
 
     def _on_error(self, error: Exception) -> None:

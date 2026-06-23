@@ -5,7 +5,9 @@
 """
 
 import json
+import sys
 
+from chat_presets import PARAMETER_PRESETS, ask_parameter_choice
 from openai_helper import build_chat_payload, get_chat_settings, load_env
 
 # Пояснення кожного параметра українською (детально)
@@ -143,19 +145,53 @@ def print_help_block(text: str, indent: str = "  ") -> None:
         print(f"{indent}{line}")
 
 
+def show_preset_payload(preset: dict, example_messages: list[dict]) -> None:
+    print_separator(f"ПРЕСЕТ {preset['id']}: {preset['name']}")
+    print(f"  Опис: {preset['description']}")
+    print("  Параметри:")
+    for key, value in preset["settings"].items():
+        print(f"    {key}: {value}")
+
+    payload = build_chat_payload(example_messages, settings_override=preset["settings"])
+    print("\n  JSON запиту:")
+    print(json.dumps(payload, ensure_ascii=False, indent=4))
+
+
 def main() -> None:
     load_env()
 
-    print_separator("НАЛАШТУВАННЯ З .env")
+    print_separator("НАЛАШТУВАННЯ З .env (базові)")
     settings = get_chat_settings()
     for key, value in settings.items():
         print(f"  {key}: {value}")
 
-    # Приклад повідомлень, як у реальному чаті
     example_messages = [
         {"role": "system", "content": "Ти корисний помічник. Відповідай українською."},
         {"role": "user", "content": "Що таке Python?"},
     ]
+
+    # Режим: python 0_test_settings.py all — показати всі 5 пресетів
+    if len(sys.argv) > 1 and sys.argv[1] == "all":
+        print_separator("УСІ 5 ПРЕСЕТІВ ПАРАМЕТРІВ")
+        for preset in PARAMETER_PRESETS:
+            show_preset_payload(preset, example_messages)
+    else:
+        preset = ask_parameter_choice()
+        show_preset_payload(preset, example_messages)
+
+        print_separator("ПОРІВНЯННЯ З .env")
+        base_payload = build_chat_payload(example_messages)
+        preset_payload = build_chat_payload(
+            example_messages, settings_override=preset["settings"]
+        )
+        print("  Параметри, що змінилися відносно .env:")
+        for key in preset["settings"]:
+            base_val = base_payload.get(key)
+            new_val = preset_payload.get(key)
+            if base_val != new_val:
+                print(f"    {key}: {base_val} → {new_val}")
+            else:
+                print(f"    {key}: без змін ({base_val})")
 
     payload = build_chat_payload(example_messages)
 
@@ -190,6 +226,7 @@ def main() -> None:
     print_separator("URL API")
     print("  POST https://api.openai.com/v1/chat/completions")
     print("\nЦя програма НЕ надсилає запит — лише показує, що було б відправлено.")
+    print("Показати всі 5 пресетів: python 0_test_settings.py all")
     print("Для реального чату запустіть: python 1_console.py\n")
 
 

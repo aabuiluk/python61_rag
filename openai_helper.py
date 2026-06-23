@@ -44,9 +44,15 @@ def get_chat_settings() -> dict:
     }
 
 
-def build_chat_payload(messages: list[dict], stream: bool = False) -> dict:
+def build_chat_payload(
+    messages: list[dict],
+    stream: bool = False,
+    settings_override: dict | None = None,
+) -> dict:
     """Формує тіло запиту до Chat Completions API."""
     settings = get_chat_settings()
+    if settings_override:
+        settings = {**settings, **settings_override}
     payload = {
         "model": settings["model"],
         "messages": messages,
@@ -61,10 +67,13 @@ def build_chat_payload(messages: list[dict], stream: bool = False) -> dict:
     return payload
 
 
-def chat_completion(messages: list[dict]) -> str:
+def chat_completion(
+    messages: list[dict],
+    settings_override: dict | None = None,
+) -> str:
     """Надсилає запит до ChatGPT і повертає текст відповіді."""
     api_key = get_api_key()
-    payload = build_chat_payload(messages)
+    payload = build_chat_payload(messages, settings_override=settings_override)
 
     response = requests.post(
         API_URL,
